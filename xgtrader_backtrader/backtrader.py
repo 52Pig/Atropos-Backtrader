@@ -323,12 +323,12 @@ class backtrader:
         df = df.groupby(df.index).last()
 
         # 计算个股策略的每日收益
-        df['daily_return'] = df['cumsum_return'].diff()
+        df['daily_return'] = df['return'].diff()
 
         # 对齐日期：确保个股数据与指数数据的日期一致
         # 将个股数据的日期索引与指数数据的日期索引对齐
         aligned_df = df.reindex(index.index, method='ffill')  # 向前填充，保证日期对齐
-        aligned_df['daily_return'] = aligned_df['cumsum_return'].diff()
+        aligned_df['daily_return'] = aligned_df['return'].diff()
 
         # 对齐后的个股策略收益与指数收益
         strategy_returns = aligned_df['daily_return'].dropna()
