@@ -242,15 +242,108 @@ class backtrader:
             else:
                 print('时间{} {} 不允许卖出 持有数量{} 小于卖出数量{}'.format(date,stock,hold_amount,sell_amount))
                 return False
-    def get_portfolio_trader_report_html(self,name='策略报告'):
+
+    def get_portfolio_trader_report_html(self, name='策略报告'):
+        '''
+        获取账户收益报告
+        '''
+        df = self.position.get_total_position_trader()
+        print("Shape of total_position:", df.shape, df.columns)
+        # Shape of total_position: (134, 14) Index(['stock', 'price', 'date', 'host_cost', 'cumsum_hold_cost', 'amount',
+        #                      'trader_amount', 'trader_value', 'value', 'price_limit',
+        #                      'ups_downs_value', 'return', 'cumsum_return', 'trader_type'],
+        #                       dtype='object')
+        print("Sample of total_position:", df.head(100))
+        # Sample of total_position:      stock  price        date  ...  return  cumsum_return  trader_type
+        # 0   600171  16.55  2024-07-01  ...  0.0000         0.0000          buy
+        # 1   600171  16.63  2024-07-02  ...  0.0000         0.0000       settle
+        # 2   600171  16.66  2024-07-03  ...  0.0000         0.0000       settle
+
+        # 获取指数数据并打印形状和样例
+        index = self.index_data.get_index_hist_data()
+        print("Shape of index:", df.shape, index.columns)
+        print("Sample of index:", df.head(100))
+        # Shape of index: (103, 11)
+        # Index(['date', 'open', 'close', 'high', 'low', 'volume', '成交额', '振幅', '涨跌幅',
+        #       '涨跌额', '换手率'],
+        #      dtype='object')
+
+        # 指数数据
+        index['date'] = pd.to_datetime(index['date'])
+        index.set_index('date', inplace=True)
+        index['benchmark_return'] = index['close'].pct_change()
+
+        # 所有个股数据
+        # 按日期分组并计算均值，转换索引为时间格式
+        df['date'] = pd.to_datetime(df['date'])
+        df.set_index('date', inplace=True)
+
+        # 检查并处理个股数据中的重复日期
+        # 方法一：将重复日期的数据聚合成一条记录（这里选择取每个日期的最后一条记录）
+        df = df.groupby(df.index).mean()
+        # df = df.groupby(df.index).sum()
+
+        # 计算个股策略的每日收益
+        df['daily_return'] = df['return'].diff()
+
+        # 对齐日期：确保个股数据与指数数据的日期一致
+        # 将个股数据的日期索引与指数数据的日期索引对齐
+        aligned_df = df.reindex(index.index, method='ffill')  # 向前填充，保证日期对齐
+        aligned_df['daily_return'] = aligned_df['return'].diff()
+
+        # 对齐后的个股策略收益与指数收益
+        strategy_returns = aligned_df['daily_return'].dropna()
+        benchmark_returns = index['benchmark_return'].dropna()
+
+        # 确保两个数据长度一致
+        aligned_data = pd.concat([strategy_returns, benchmark_returns], axis=1).dropna()
+        strategy_returns = aligned_data.iloc[:, 0]  # .squeeze()
+        benchmark_returns = aligned_data.iloc[:, 1]  # .squeeze()
+        # 计算复合收益率（手动计算复合收益）
+        def compound(returns):
+            return (1 + returns).prod() - 1
+
+        # 手动计算复合收益率（可替代 quantstats 的 compound）
+        total_returns = compound(strategy_returns)
+        benchmark_total_returns = compound(benchmark_returns)
+
+        # 打印复合收益率检查
+        print("策略总收益率:", type(total_returns), type(strategy_returns), total_returns)
+        print("基准总收益率:", type(benchmark_total_returns), type(benchmark_returns), benchmark_total_returns)
+        # 生成策略报告
+        report_path = r'{}\交易报告\{}.html'.format(self.path, name)
+        qs.reports.html(returns=strategy_returns,
+                        benchmark=benchmark_returns,
+                        output=report_path)
+        print("策略报告生成成功:", report_path)
+
+    def get_portfolio_trader_report_html_2(self,name='策略报告'):
         '''
         获取账户收益报告
         '''
         try:
             df=self.position.get_total_position_trader()
+            print("Shape of total_position:", df.shape, df.columns)
+            #Shape of total_position: (134, 14) Index(['stock', 'price', 'date', 'host_cost', 'cumsum_hold_cost', 'amount',
+            #                      'trader_amount', 'trader_value', 'value', 'price_limit',
+            #                      'ups_downs_value', 'return', 'cumsum_return', 'trader_type'],
+            #                       dtype='object')
+            print("Sample of total_position:", df.head(100))
+            # Sample of total_position:      stock  price        date  ...  return  cumsum_return  trader_type
+            # 0   600171  16.55  2024-07-01  ...  0.0000         0.0000          buy
+            # 1   600171  16.63  2024-07-02  ...  0.0000         0.0000       settle
+            # 2   600171  16.66  2024-07-03  ...  0.0000         0.0000       settle
+
             df=df.groupby(by='date').mean()
             df.index=pd.to_datetime(df.index)
             index=self.index_data.get_index_hist_data()
+            print("Shape of index:", df.shape, index.columns)
+            print("Sample of index:", df.head(100))
+
+            #Shape of index: (103, 11)
+            #Index(['date', 'open', 'close', 'high', 'low', 'volume', '成交额', '振幅', '涨跌幅',
+            #       '涨跌额', '换手率'],
+            #      dtype='object')
             index_size=index.shape[0]
             df_size=df.shape[0]
             if index_size>=df_size:
