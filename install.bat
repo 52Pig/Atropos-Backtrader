@@ -17,7 +17,7 @@ py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pytdx
 py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pydash
 py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple empyrical
 py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pywencai
-py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple quantstats
+py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple quantstats==0.0.60
 py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple dash
 py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple plotly
 py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple dash_bootstrap_components 

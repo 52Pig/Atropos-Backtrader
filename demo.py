@@ -197,7 +197,7 @@ class my_backtrader:
                     else:
                         self.trader.settle(date=date,stock=stock,price=price)
                 else:
-                    print("时间{} 标的{} 不符合止盈止损卖出".format(date,stock))
+                    print("时 间{} 标的{} 不符合止盈止损卖出".format(date,stock))
                 '''
                 #目标价值交易
                 if buy==True:
@@ -226,12 +226,4 @@ if __name__=='__main__':
     trader.trader.get_plot_all_trader_data_figure(limit=1000)
     #显示策略数据
     df=trader.trader.get_portfolio_trader_data_figure(limit=100000)
-    
-    
-    
-
-
-
-        
-    
 
