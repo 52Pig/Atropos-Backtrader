@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from xgtrader_backtrader.index_data.index_data import index_data
 import os
 import math
+import json
 class backtrader:
     def __init__(self,start_date='20210105',end_date='20500101',data_type='D',
                  starting_cash=2000,cash=2000,commission=0.001,index_stock='003000'):
@@ -117,8 +118,11 @@ class backtrader:
         '''
         获取持股数据字典类型的数据
         '''
+        # 打印 df 的列名，查看是否存在价格列
+        print(f"self.position.position: {json.dumps(self.position.position)}")
         if stock in  list(self.position.position.keys()):
             dict_data=self.position.position[stock]
+            print(f"dict_data:{dict_data}")
             df=pd.DataFrame(dict_data)
             return df
         else:
@@ -197,10 +201,12 @@ class backtrader:
         '''
         account=self.get_portfolio_last_data()
         hold_stock=self.get_position_last_data_by_stock(stock=stock)
+        print(f"hold_stock: {hold_stock} 类型: {type(hold_stock)}")
         if len(hold_stock)<=0:
             hold_amount=0
         else:
-            hold_amount=hold_stock['amount']
+            print('[DEBUG]type_hold_stock=', type(hold_stock))
+            hold_amount=hold_stock.get('amount', 0)
         if stock not in  list(self.position.position.keys()):
             print('时间{} {}没有持股直接买入'.format(date,stock))
             return True
@@ -223,27 +229,121 @@ class backtrader:
         检查是否可用卖出
         '''
         hold_stock=self.get_position_last_data_by_stock(stock=stock)
+        print(f"hold_stock: {hold_stock} 类型: {type(hold_stock)}")
         if stock not in  list(self.position.position.keys()):
             print('时间{} {}没有持股不允许卖出'.format(date,stock))
             return False
         else:
             sell_amount=amount
-            hold_amount=hold_stock['amount']
+            hold_amount=hold_stock.get('amount', 0)
             if hold_amount>=sell_amount:
                 print('时间{} {} 允许卖出 持有数量{} 卖出数量{}'.format(date,stock,hold_amount,sell_amount))
                 return True
             else:
                 print('时间{} {} 不允许卖出 持有数量{} 小于卖出数量{}'.format(date,stock,hold_amount,sell_amount))
                 return False
-    def get_portfolio_trader_report_html(self,name='策略报告'):
+
+    def get_portfolio_trader_report_html(self, name='策略报告'):
+        '''
+        获取账户收益报告
+        '''
+        df = self.position.get_total_position_trader()
+        print("Shape of total_position:", df.shape, df.columns)
+        # Shape of total_position: (134, 14) Index(['stock', 'price', 'date', 'host_cost', 'cumsum_hold_cost', 'amount',
+        #                      'trader_amount', 'trader_value', 'value', 'price_limit',
+        #                      'ups_downs_value', 'return', 'cumsum_return', 'trader_type'],
+        #                       dtype='object')
+        print("Sample of total_position:", df.head(100))
+        # Sample of total_position:      stock  price        date  ...  return  cumsum_return  trader_type
+        # 0   600171  16.55  2024-07-01  ...  0.0000         0.0000          buy
+        # 1   600171  16.63  2024-07-02  ...  0.0000         0.0000       settle
+        # 2   600171  16.66  2024-07-03  ...  0.0000         0.0000       settle
+
+        # 获取指数数据并打印形状和样例
+        index = self.index_data.get_index_hist_data()
+        print("Shape of index:", df.shape, index.columns)
+        print("Sample of index:", df.head(100))
+        # Shape of index: (103, 11)
+        # Index(['date', 'open', 'close', 'high', 'low', 'volume', '成交额', '振幅', '涨跌幅',
+        #       '涨跌额', '换手率'],
+        #      dtype='object')
+
+        # 指数数据
+        index['date'] = pd.to_datetime(index['date'])
+        index.set_index('date', inplace=True)
+        index['benchmark_return'] = index['close'].pct_change()
+
+        # 所有个股数据
+        # 按日期分组并计算均值，转换索引为时间格式
+        df['date'] = pd.to_datetime(df['date'])
+        df.set_index('date', inplace=True)
+
+        # 检查并处理个股数据中的重复日期
+        # 方法一：将重复日期的数据聚合成一条记录（这里选择取每个日期的最后一条记录）
+        df = df.groupby(df.index).mean()
+        # df = df.groupby(df.index).sum()
+
+        # 计算个股策略的每日收益
+        df['daily_return'] = df['return'].diff()
+
+        # 对齐日期：确保个股数据与指数数据的日期一致
+        # 将个股数据的日期索引与指数数据的日期索引对齐
+        aligned_df = df.reindex(index.index, method='ffill')  # 向前填充，保证日期对齐
+        aligned_df['daily_return'] = aligned_df['return'].diff()
+
+        # 对齐后的个股策略收益与指数收益
+        strategy_returns = aligned_df['daily_return'].dropna()
+        benchmark_returns = index['benchmark_return'].dropna()
+
+        # 确保两个数据长度一致
+        aligned_data = pd.concat([strategy_returns, benchmark_returns], axis=1).dropna()
+        strategy_returns = aligned_data.iloc[:, 0]  # .squeeze()
+        benchmark_returns = aligned_data.iloc[:, 1]  # .squeeze()
+        # 计算复合收益率（手动计算复合收益）
+        def compound(returns):
+            return (1 + returns).prod() - 1
+
+        # 手动计算复合收益率（可替代 quantstats 的 compound）
+        total_returns = compound(strategy_returns)
+        benchmark_total_returns = compound(benchmark_returns)
+
+        # 打印复合收益率检查
+        print("策略总收益率:", type(total_returns), type(strategy_returns), total_returns)
+        print("基准总收益率:", type(benchmark_total_returns), type(benchmark_returns), benchmark_total_returns)
+        # 生成策略报告
+        report_path = r'{}\交易报告\{}.html'.format(self.path, name)
+        qs.reports.html(returns=strategy_returns,
+                        benchmark=benchmark_returns,
+                        output=report_path)
+        print("策略报告生成成功:", report_path)
+
+    def get_portfolio_trader_report_html_2(self,name='策略报告'):
         '''
         获取账户收益报告
         '''
         try:
             df=self.position.get_total_position_trader()
+            print("Shape of total_position:", df.shape, df.columns)
+            #Shape of total_position: (134, 14) Index(['stock', 'price', 'date', 'host_cost', 'cumsum_hold_cost', 'amount',
+            #                      'trader_amount', 'trader_value', 'value', 'price_limit',
+            #                      'ups_downs_value', 'return', 'cumsum_return', 'trader_type'],
+            #                       dtype='object')
+            print("Sample of total_position:", df.head(100))
+            # Sample of total_position:      stock  price        date  ...  return  cumsum_return  trader_type
+            # 0   600171  16.55  2024-07-01  ...  0.0000         0.0000          buy
+            # 1   600171  16.63  2024-07-02  ...  0.0000         0.0000       settle
+            # 2   600171  16.66  2024-07-03  ...  0.0000         0.0000       settle
+
             df=df.groupby(by='date').mean()
             df.index=pd.to_datetime(df.index)
             index=self.index_data.get_index_hist_data()
+            print("Shape of index:", df.shape, index.columns)
+            print("Sample of index:", df.head(100))
+
+            #Shape of index: (103, 11)
+            #Index(['date', 'open', 'close', 'high', 'low', 'volume', '成交额', '振幅', '涨跌幅',
+            #       '涨跌额', '换手率'],
+            #      dtype='object')
             index_size=index.shape[0]
             df_size=df.shape[0]
             if index_size>=df_size:
@@ -264,24 +364,166 @@ class backtrader:
             qs.reports.html(returns=df['return_ratio'],output=r'{}\交易报告\{}.html'.format(self.path,name))
         except Exception as e:
             print(e)
-    def get_position_trader_report_html_by_stock(self,stock='600031'):
+
+    def calculate_max_drawdown(self, returns):
+        """
+        计算最大回撤（Max Drawdown）
+        """
+        # 计算累计回报
+        cumulative_returns = (1 + returns).cumprod()
+
+        # 计算历史最大值
+        running_max = cumulative_returns.cummax()
+
+        # 计算回撤
+        drawdown = (cumulative_returns - running_max) / running_max
+
+        # 返回最大回撤
+        return drawdown.min()  # 最大回撤是负值，返回最小值表示最大回撤
+
+    def get_position_trader_report_html_by_stock(self, stock='600031'):
+
+        index=self.index_data.get_index_hist_data()
+        index_size=index.shape[0]     # 获取指数数据的行数
+        df=self.get_position_pandas_data_by_stock(stock=stock)
+        print("------1------")
+        print(f"Shape of index: {index.shape}")
+        # (108, 11)
+        print(f"Shape of df: {df.shape}")
+        # (134, 14)
+        # 打印 df 的列名，查看是否存在价格列
+        print(f"Columns in df: {df.columns}")
+        # Index(['stock', 'price', 'date', 'host_cost', 'cumsum_hold_cost', 'amount',
+        #        'trader_amount', 'trader_value', 'value', 'price_limit',
+        #        'ups_downs_value', 'return', 'cumsum_return', 'trader_type'],
+        #       dtype='object')
+        # 打印 df 的前几行，查看具体数据
+        print("Sample data in df:")
+        print(df.head(n=100))
+
+        # 指数数据
+        index['date'] = pd.to_datetime(index['date'])
+        index.set_index('date', inplace=True)
+        # 计算指数的每日收益，添加 benchmark_return 列
+        index['benchmark_return'] = index['close'].pct_change()
+
+        # 个股数据
+        df['date'] = pd.to_datetime(df['date'])
+        df.set_index('date', inplace=True)
+
+        # 检查并处理个股数据中的重复日期
+        # 方法一：将重复日期的数据聚合成一条记录（这里选择取每个日期的最后一条记录）
+        df = df.groupby(df.index).last()
+
+        # 计算个股策略的每日收益
+        df['daily_return'] = df['return'].diff()
+
+        # 对齐日期：确保个股数据与指数数据的日期一致
+        # 将个股数据的日期索引与指数数据的日期索引对齐
+        aligned_df = df.reindex(index.index, method='ffill')  # 向前填充，保证日期对齐
+        aligned_df['daily_return'] = aligned_df['return'].diff()
+
+        # 对齐后的个股策略收益与指数收益
+        strategy_returns = aligned_df['daily_return'].dropna()
+        benchmark_returns = index['benchmark_return'].dropna()
+
+        # 确保两个数据长度一致
+        aligned_data = pd.concat([strategy_returns, benchmark_returns], axis=1).dropna()
+        strategy_returns = aligned_data.iloc[:, 0]     #.squeeze()
+        benchmark_returns = aligned_data.iloc[:, 1]    #.squeeze()
+        # # 显式转换为 Series 类型，确保不会出现 DataFrame
+        # strategy_returns = pd.Series(strategy_returns)
+        # benchmark_returns = pd.Series(benchmark_returns)
+
+        # 计算复合收益率（手动计算复合收益）
+        def compound(returns):
+            return (1 + returns).prod() - 1
+
+        # 手动计算复合收益率（可替代 quantstats 的 compound）
+        total_returns = compound(strategy_returns)
+        benchmark_total_returns = compound(benchmark_returns)
+
+        # 打印复合收益率检查
+        print("策略总收益率:", type(total_returns), type(strategy_returns), total_returns)
+        print("基准总收益率:", type(benchmark_total_returns), type(benchmark_returns), benchmark_total_returns)
+        # 确保数据对齐
+        # assert len(strategy_returns) == len(benchmark_returns), "数据长度不匹配"
+        qs.reports.html(strategy_returns,
+                        benchmark=benchmark_returns,
+                        output=r'{}\交易报告\{}交易报告.html'.format(self.path, stock))
+
+    def get_position_trader_report_html_by_stock_old(self,stock='600031'):
         '''
         获取个股交易报告
         '''
         index=self.index_data.get_index_hist_data()
-        index_size=index.shape[0]
+        index_size=index.shape[0]     # 获取指数数据的行数
         df=self.get_position_pandas_data_by_stock(stock=stock)
-        df_size=df.shape[0]
+        print("------1------")
+        print(f"Shape of index: {index.shape}")
+        # (108, 11)
+        print(f"Shape of df: {df.shape}")
+        # (134, 14)
+        # 打印 df 的列名，查看是否存在价格列
+        print(f"Columns in df: {df.columns}")
+        # Index(['stock', 'price', 'date', 'host_cost', 'cumsum_hold_cost', 'amount',
+        #        'trader_amount', 'trader_value', 'value', 'price_limit',
+        #        'ups_downs_value', 'return', 'cumsum_return', 'trader_type'],
+        #       dtype='object')
+        # 打印 df 的前几行，查看具体数据
+        print("Sample data in df:")
+        print(df.head(n=100))
+
+        df_size=df.shape[0]    # 获取个股交易数据的行数
+        # 确保指数数据和个股数据大小对齐
         if index_size>=df_size:
-            index=index[-df_size:]
+            index=index[-df_size:]      #对齐指数数据大小
         else:
-            df_size=df_size[-index_size:]
+            # df_size=df_size[-index_size:]
+            df = df[-index_size:]     # 对齐个股数据大小
+
         if df.shape[0]>0:
+            print("------2------")
+            # 确保索引的 'date' 列是日期类型
             #df.index=pd.to_datetime(df['date'])
-            index.index=pd.to_datetime(index['date'])
+            index.index=pd.to_datetime(index['date'], errors='coerce')
+            index = index.dropna(subset=['date'])  # 删除无效的日期行（NaT）
+            index.set_index('date', inplace=True)    # 将 'date' 列设置为索引
+
+            # 强制转换为 DatetimeIndex 类型（如果不是）
+            if not isinstance(index.index, pd.DatetimeIndex):
+                print("警告: 强制转换为 DatetimeIndex 类型")
+                index.index = pd.to_datetime(index.index)  # 强制转换为 DatetimeIndex 类型
+            # 检查是否有时区信息并去除时区
+            if index.index.tz is not None:
+                index.index = index.index.tz_localize(None)
             #df['index']=index['close'].tolist()
-            index['return']=df['return'].tolist()
-            qs.reports.html(returns=index['return'],benchmark=index['close'].pct_change(),output=r'{}\交易报告\{}交易报告.html'.format(self.path,stock))
+            # 合并返回的指数数据和个股交易数据
+            # index['return']=df['return'].tolist()     # 将个股的 'return' 数据添加到指数数据中
+            print('return=====', type(df['return']), df['return'])
+            index['return'] = df['return']
+            # **清理 `NaN` 值**：强制去掉 NaN
+            print(f"Before dropna, sample returns: {index['return'].head()}")
+            index['return'] = index['return'].dropna()  # 删除 NaN 值
+            print(f"After dropna, sample returns: {index['return'].head()}")
+
+            # **检查 `returns` 数据是否为空**：如果 `returns` 数据为空，则跳过报告生成
+            if index['return'].empty:
+                print("警告：返回数据为空，无法生成报告。")
+                return
+
+            # 打印数据格式以确认
+            print(f"returns type: {type(index['return'])}, returns sample: {index['return'].head()}")
+            # # 计算并添加最大回撤
+            # max_drawdown = self.calculate_max_drawdown(index['return'])
+            # index['max drawdown'] = max_drawdown
+
+            # 使用 QuantStats 生成交易报告
+            # qs.reports.html(returns=index['return'],benchmark=index['close'].pct_change(),output=r'{}\交易报告\{}交易报告.html'.format(self.path,stock))
+            qs.reports.html(returns=index['return'],  # 使用 .squeeze() 将 DataFrame 转换为 Series
+                            benchmark=index['price'].pct_change(),
+                            file = r'{}\交易报告\{}交易报告.html'.format(self.path, stock))
+            print("------3------")
         else:
             print('{}没有交易记录'.format(stock))
     def get_poition_all_trader_report_html(self):
@@ -290,11 +532,13 @@ class backtrader:
         '''
         stock_list=self.position.position.keys()
         for stock in stock_list:
-            try:
-                self.get_position_trader_report_html_by_stock(stock=stock)
-            except Exception as e:
-                print(e)
-                print('{}个股的交易报告有问题'.format(stock))
+            self.get_position_trader_report_html_by_stock(stock=stock)
+
+            # try:
+            #     self.get_position_trader_report_html_by_stock(stock=stock)
+            # except Exception as e:
+            #     print(e)
+            #     print('{}个股的交易报告有问题'.format(stock))
     def get_plot_trader_data_figure_by_stock(self,stock='600031',limit=100):
         hist=self.position.data.hist
         hist=hist[hist['stock']==stock]
@@ -418,10 +662,11 @@ class backtrader:
         '''
         target_volume=amount
         hold_stock=self.get_position_last_data_by_stock(stock=stock)
+        print(f"hold_stock: {hold_stock} 类型: {type(hold_stock)}")
         if len(hold_stock)>0:
             stock=str(stock)
             #持有数量
-            hold_num=hold_stock['amount']
+            hold_num=hold_stock.get('amount', 0)
             #买卖的差额
             buy_sell_num=amount-float(hold_num)
             #存在买入差额
@@ -452,9 +697,10 @@ class backtrader:
         '''
         order_value=value
         hold_stock=self.get_position_last_data_by_stock(stock=stock)
+        print(f"hold_stock: {hold_stock} 类型: {type(hold_stock)}")
         if len(hold_stock)>0:
             #可以使用的数量兼容t0
-            hold_value=hold_stock['value']
+            hold_value=hold_stock.get('value', 0)
             #买卖价值差转成数量
             amount=math.floor(value/price)
             amount=self.adjust_amount(stock=str(stock),amount=amount)
@@ -488,12 +734,13 @@ class backtrader:
         '''
         target_value=value
         hold_stock=self.get_position_last_data_by_stock(stock=stock)
+        print(f"hold_stock: {hold_stock} 类型: {type(hold_stock)}")
         #买卖价值差转成数量
         amount=math.floor(value/price)
         amount=self.adjust_amount(stock=str(stock),amount=amount)
         if len(hold_stock)>0:
             #可以使用的数量兼容t0
-            hold_num=hold_stock['value']
+            hold_num=hold_stock.get('value', 0)
             buy_sell_num=math.floor(amount-float(hold_num))
             buy_sell_num=self.adjust_amount(stock=str(stock),amount=buy_sell_num)
             #存在买入差额
