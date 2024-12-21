@@ -14,42 +14,72 @@ class my_backtrader:
     '''
     def __init__(self,start_date='20200101',end_date='20500101',data_type='D',
                  starting_cash=200000,cash=200000,commission=0.001,index_stock='000300',is_week=False):
-        self.start_date=start_date
-        self.end_date=end_date
-        self.data_type=data_type
-        self.starting_cash=starting_cash
-        self.commission=commission
-        self.index_stock=index_stock
-        #这里输入代码就可以
-        #导入自定义股票池
-        stock_df=pd.read_excel(r'self_define_stock_pools.xlsx',dtype='object')
-        stock_df['证券代码']=stock_df['证券代码'].astype(str)
-        print(stock_df['证券代码'].tolist())
-        print(stock_df['名称'].tolist())
-        print(stock_df)
-        stock_list=stock_df['证券代码'].tolist()
-        #stock_list=['512890']
-        stock_list=stock_list
-        self.stock_list=stock_list
-        self.amount=1000
-        self.hold_limit=2000
-        #采用目标数量交易
-        self.buy_target_volume=10000
-        self.sell_target_volume=0
-        self.buy_target_value=10000
-        self.sell_target_value=0
-        self.tdx_trader_function=tdx_trader_function()
-        self.is_week=is_week
-        self.week_buy_n=2
-        self.week_sell_n=1
-        self.daily_buy_n=4
-        self.daily_sell_n=3
-        #一般是-3%为强制
-        self.top_sell=-2
-        self.trader=backtrader(start_date=self.start_date,end_date=self.end_date,
-                               data_type=self.data_type,starting_cash=self.starting_cash,
-                               commission=self.commission,cash=cash,index_stock=self.index_stock)
-        self.data=user_def_data(start_date=self.start_date,end_date=self.end_date,data_type=self.data_type)
+        """
+
+                Parameters
+                ----------
+                start_date: 起始日期
+                end_date： 结束日期
+                data_type：数据频率(日线/周线)
+                starting_cash: 初始资金
+                cash: 当前可用现金余额
+                commission: 交易手续费比例；0<x<1
+                index_stock: 参考指数股票代码，例如沪深300，代码为000300
+                is_week: 是否采用周线数据买卖
+                """
+        self.start_date = start_date
+        self.end_date = end_date
+        self.data_type = data_type
+        self.starting_cash = starting_cash
+        self.commission = commission
+        self.index_stock = index_stock
+
+        ## 导入自定义股票池
+        stock_df = pd.read_excel(r'self_define_stock_pools.xlsx', dtype='object')
+        stock_df['证券代码'] = stock_df['证券代码'].astype(str)
+        # print(stock_df['证券代码'].tolist())
+        # print(stock_df['名称'].tolist())
+        print(f"自定义监测池：{stock_df}")
+        stock_list = stock_df['证券代码'].tolist()
+        # stock_list=['512890']
+        stock_list = stock_list
+        self.stock_list = stock_list
+        #### 持仓与交易限制
+        # 每次买卖的股票数量，单位股
+        self.amount = 1000
+        # 单只股票的最大持仓量，股
+        self.hold_limit = 2000
+        # 每次买入的目标数量，股
+        self.buy_target_volume = 10000
+        # 每次卖出的目标数量，股
+        self.sell_target_volume = 0
+        # 每次买入的目标金额
+        self.buy_target_value = 10000
+        # 每次卖出的目标金额
+        self.sell_target_value = 0
+
+        #### 工具实例化，用于调用六脉神剑登指标计算函数
+        self.tdx_trader_function = tdx_trader_function()
+        self.is_week = is_week
+
+        #### 技术指标相关
+        # 周线买入信号的最低阈值，周线>时，触发买入
+        self.week_buy_n = 2
+        # 周线卖出信号的最高阈值， 周线<=时，触发卖出
+        self.week_sell_n = 1
+        # 日线信号达到或超过该阈值时，触发买入
+        self.daily_buy_n = 4
+        # 日线信号值小于该阈值时，触发卖出
+        self.daily_sell_n = 3
+        # 强制止损的涨跌幅阈值，一般是-3%为强制
+        self.top_sell = -2
+        #### 回测框架实例化
+        self.trader = backtrader(start_date=self.start_date, end_date=self.end_date,
+                                 data_type=self.data_type, starting_cash=self.starting_cash,
+                                 commission=self.commission, cash=cash, index_stock=self.index_stock)
+        #### 数据加载器实例化
+        self.data = user_def_data(start_date=self.start_date, end_date=self.end_date, data_type=self.data_type)
+
     def add_all_data(self):
         '''
         多线程加载数据
@@ -222,8 +252,8 @@ if __name__=='__main__':
     trader.trader.get_poition_all_trader_report_html()
     #获取策略报告
     trader.trader.get_portfolio_trader_report_html()
-    #显示个股的交易图
-    trader.trader.get_plot_all_trader_data_figure(limit=1000)
-    #显示策略数据
-    df=trader.trader.get_portfolio_trader_data_figure(limit=100000)
+    # #显示个股的交易图
+    # trader.trader.get_plot_all_trader_data_figure(limit=1000)
+    # #显示策略数据
+    # df=trader.trader.get_portfolio_trader_data_figure(limit=100000)
 
