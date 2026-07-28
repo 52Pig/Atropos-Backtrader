@@ -1,0 +1,1 @@
+Please provide the content of the README you would like me to translate! You haven't included the text yet. Once you paste it, I will translate it to Spanish while preserving all Markdown, code blocks, and links as requested.
